@@ -18,9 +18,12 @@ package scale
 
 import (
 	"context"
+	"io/ioutil"
+	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/glog"
+	"github.com/golang/protobuf/ptypes/wrappers"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -45,7 +48,31 @@ func (is *ScaleIdentityServer) GetPluginCapabilities(ctx context.Context, req *c
 
 func (is *ScaleIdentityServer) Probe(ctx context.Context, req *csi.ProbeRequest) (*csi.ProbeResponse, error) {
 	glog.V(4).Infof("Probe called with args: %#v", req)
-	return &csi.ProbeResponse{}, nil
+
+	// Determine plugin health
+	// If unhealthy return gRPC error code
+	// more on error codes https://github.com/container-storage-interface/spec/blob/master/spec.md#probe-errors
+
+	// Check /proc/mounts if gpfs filesystem is listed
+	procMounts, err := ioutil.ReadFile("/proc/mounts")
+	if err != nil {
+		glog.Error(err)
+		return &csi.ProbeResponse{Ready: &wrappers.BoolValue{Value: false}},
+			status.Error(codes.FailedPrecondition, "Probe was unable to open /proc/mounts")
+	}
+	lines := strings.Split(string(procMounts), "\n")
+
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if fields[2] == "gpfs" {
+			// If gpfs is listed return plugin is ready
+			return &csi.ProbeResponse{Ready: &wrappers.BoolValue{Value: true}}, nil
+		}
+	}
+
+	// If gpfs is not found return plugin isn't ready with gRPC error
+	return &csi.ProbeResponse{Ready: &wrappers.BoolValue{Value: false}},
+		status.Error(codes.FailedPrecondition, "GPFS is not listed in /proc/mounts")
 }
 
 func (is *ScaleIdentityServer) GetPluginInfo(ctx context.Context, req *csi.GetPluginInfoRequest) (*csi.GetPluginInfoResponse, error) {

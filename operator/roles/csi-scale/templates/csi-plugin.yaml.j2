@@ -65,6 +65,8 @@ spec:
             - name: registration-dir
               mountPath: /registration
         - name: ibm-spectrum-scale-csi
+          securityContext:
+            allowedProcMountTypes: "UnmaskedProcMount"
           image: "{{ spectrumScale }}"
           args :
             - "--nodeid=$(NODE_ID)"
